@@ -33,8 +33,9 @@ jobs:
 
       - name: Install, Build and Sync Capacitor
         run: |
-          # Переходим в точную папку проекта
-          cd beat-making-app
+          # Ищем package.json только в реальных папках, игнорируя кэш сборщиков
+          TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" -not -path "*/.next/*" | head -n 1))
+          cd "$TARGET_DIR"
           
           # 1. Установка оригинальных зависимостей
           npm install
@@ -59,8 +60,9 @@ jobs:
 
       - name: Build Android APK
         run: |
-          # Переходим напрямую в сгенерированную папку android
-          cd beat-making-app/android
+          # Ищем сгенерированную папку android, также игнорируя кэш .next
+          ANDROID_DIR=$(dirname $(find . -maxdepth 4 -name "gradlew" -not -path "*/.next/*" | head -n 1))
+          cd "$ANDROID_DIR"
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -69,6 +71,5 @@ jobs:
         with:
           name: beat-app-mobile-apk
           path: |
-            beat-making-app/android/app/build/outputs/apk/debug/app-debug.apk
+            **/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
