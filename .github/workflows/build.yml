@@ -22,7 +22,6 @@ jobs:
         with:
           node-version: 24
 
-      # НАСТРОЙКА ОКРУЖЕНИЯ ДЛЯ ANDROID
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -32,21 +31,31 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # СБОРКА ПРОЕКТА И ИНТЕГРАЦИЯ С CAPACITOR
       - name: Install, Build and Sync Capacitor
         run: |
-          # Автоматически находим, куда распаковался package.json
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1))
           cd "$TARGET_DIR"
           
-          # 1. Обычная веб-сборка сайта Next.js
+          # 1. Установка базовых зависимостей проекта
           npm install
+          
+          # 2. Принудительная установка Capacitor, если его нет в package.json
+          npm install @capacitor/core @capacitor/android
+          npm install -D @capacitor/cli
+          
+          # 3. Автоматическое создание конфигурации Capacitor, если её забыли добавить
+          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.json" ]; then
+            echo "Конфигурация Capacitor не найдена. Создаем автоматически..."
+            npx cap init "Beat App" "com.martin.beatapp" --web-dir=out
+            npx cap add android
+          fi
+          
+          # 4. Веб-сборка сайта Next.js в папку out
           npm run build
           
-          # 2. Синхронизация файлов сайта (папки out) в Android-проект
+          # 5. Синхронизация файлов сайта в Android-проект
           npx cap sync android
 
-      # СБОРКА МОБИЛЬНОГО ПРИЛОЖЕНИЯ (APK)
       - name: Build Android APK
         run: |
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1))
@@ -54,7 +63,6 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      # СОХРАНЕНИЕ APK В АРТЕФАКТЫ GITHUB
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -62,4 +70,3 @@ jobs:
           path: |
             **/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
