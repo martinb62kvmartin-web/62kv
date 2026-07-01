@@ -22,49 +22,46 @@ jobs:
         with:
           node-version: 24
 
-      - name: Set up JDK 17
+      # Изменяем версию Java на 11 для лучшей совместимости с Gradle в Capacitor
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '11'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # Автоматически принимаем все лицензии Android SDK перед компиляцией
+      - name: Accept Android Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
       - name: Install, Build and Sync Capacitor
         run: |
-          # Ищем package.json только в реальных папках, игнорируя кэш сборщиков
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" -not -path "*/.next/*" | head -n 1))
           cd "$TARGET_DIR"
           
-          # 1. Установка оригинальных зависимостей
           npm install
-          
-          # 2. Установка мобильной оболочки
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
           
-          # 3. Чистый запуск сборки с правильными переменными окружения
           NEXT_TELEMETRY_DISABLED=1 NEXT_DISABLE_SOURCEMAPS=1 NEXT_PRIVATE_SKIP_LINT=1 NEXT_PRIVATE_SKIP_TYPECHECK=1 npx next build
           
-          # 4. Создаем конфигурацию Capacitor, которая читает из папки .next
           echo "Создаем мобильную конфигурацию..."
           rm -f capacitor.config.ts capacitor.config.json capacitor.config.js
           echo "module.exports = { appId: 'com.martin.beatapp', appName: 'Beat App', webDir: '.next/server/app' };" > capacitor.config.js
           
-          # 5. Инициализируем Android-платформу
           npx cap add android || true
-          
-          # 6. Копируем файлы веб-приложения в Android проект
           npx cap sync android
 
       - name: Build Android APK
         run: |
-          # Ищем сгенерированную папку android, также игнорируя кэш .next
           ANDROID_DIR=$(dirname $(find . -maxdepth 4 -name "gradlew" -not -path "*/.next/*" | head -n 1))
           cd "$ANDROID_DIR"
           chmod +x gradlew
-          ./gradlew assembleDebug
+          # Добавляем флаг --no-daemon для стабильности сборки в облаке
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
