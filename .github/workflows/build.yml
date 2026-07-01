@@ -7,26 +7,34 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # Задаем рабочую папку для ВСЕХ шагов run ниже
+    defaults:
+      run:
+        working-directory: ./beat-making-app
+
     steps:
+      # Для этого шага сбрасываем рабочую директорию на корень репозитория,
+      # так как архив находится в корне, а не внутри еще не распакованной папки
       - name: Download repository
         uses: actions/checkout@v4
+        with:
+          working-directory: . 
 
+      # Распаковка также происходит в корне
       - name: Unzip project
         run: |
           unzip beat-making-app.zip
           ls
+        working-directory: .
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
+      # Теперь эти шаги автоматически выполняются внутри папки beat-making-app
       - name: Install packages
-        run: |
-          cd beat-making-app
-          npm install
+        run: npm install
 
       - name: Build project
-        run: |
-          cd beat-making-app
-          npm run build
+        run: npm run build
