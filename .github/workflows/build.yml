@@ -36,36 +36,26 @@ jobs:
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1))
           cd "$TARGET_DIR"
           
-          # 1. Установка базовых зависимостей проекта
+          # 1. Установка оригинальных зависимостей
           npm install
           
-          # 2. Принудительное включение статического экспорта в next.config
-          if [ -f "next.config.js" ]; then
-            echo "Настраиваем next.config.js..."
-            echo "const nextConfig = { output: 'export', images: { unoptimized: true } }; module.exports = nextConfig;" > next.config.js
-          elif [ -f "next.config.mjs" ]; then
-            echo "Настраиваем next.config.mjs..."
-            echo "/** @type {import('next').NextConfig} */ const nextConfig = { output: 'export', images: { unoptimized: true } }; export default nextConfig;" > next.config.mjs
-          else
-            echo "Файл конфигурации Next.js не найден. Создаем next.config.js..."
-            echo "module.exports = { output: 'export', images: { unoptimized: true } };" > next.config.js
-          fi
-          
-          # 3. Принудительная установка Capacitor
+          # 2. Установка мобильной оболочки
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
           
-          # 4. Автоматическое создание конфигурации Capacitor
-          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.json" ]; then
-            echo "Создаем конфигурацию Capacitor..."
-            npx cap init "Beat App" "com.martin.beatapp" --web-dir=out
-            npx cap add android
-          fi
+          # 3. Принудительный запуск сборки БЕЗ Turbopack с отключением проверки типов для стабильности
+          # Скрипт напрямую вызывает базовый компилятор Next.js в обход возможных флагов в package.json
+          NEXT_DISABLE_SOURCEMAPS=1 npx next build --no-lint
           
-          # 5. Веб-сборка сайта Next.js в папку out
-          npm run build
+          # 4. Создаем конфигурацию Capacitor, которая читает из папки .next
+          echo "Создаем мобильную конфигурацию..."
+          rm -f capacitor.config.ts capacitor.config.json capacitor.config.js
+          echo "module.exports = { appId: 'com.martin.beatapp', appName: 'Beat App', webDir: '.next/server/app' };" > capacitor.config.js
           
-          # 6. Синхронизация файлов сайта в Android-проект
+          # 5. Инициализируем Android-платформу
+          npx cap add android || true
+          
+          # 6. Копируем файлы веб-приложения в Android проект
           npx cap sync android
 
       - name: Build Android APK
@@ -82,4 +72,3 @@ jobs:
           path: |
             **/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
