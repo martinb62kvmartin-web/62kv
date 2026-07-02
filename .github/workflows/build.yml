@@ -22,20 +22,17 @@ jobs:
         with:
           node-version: 24
 
-      # Изменяем версию Java на 11 для лучшей совместимости с Gradle в Capacitor
-      - name: Set up JDK 11
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '11'
+          java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # Автоматически принимаем все лицензии Android SDK перед компиляцией
+      # Используем встроенный в GitHub Actions Android SDK и принимаем лицензии
       - name: Accept Android Licenses
         run: |
-          yes | sdkmanager --licenses || true
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Install, Build and Sync Capacitor
         run: |
@@ -60,7 +57,8 @@ jobs:
           ANDROID_DIR=$(dirname $(find . -maxdepth 4 -name "gradlew" -not -path "*/.next/*" | head -n 1))
           cd "$ANDROID_DIR"
           chmod +x gradlew
-          # Добавляем флаг --no-daemon для стабильности сборки в облаке
+          # Явно передаем путь к Android SDK для Gradle
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact
