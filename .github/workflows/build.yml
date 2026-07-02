@@ -22,11 +22,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Set up JDK 17
+      # Установка Java 21
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Accept Android Licenses
         run: |
@@ -34,6 +35,58 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Universal Web and Mobile Build
+        run: |
+          TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" -not -path "*/.next/*" | head -n 1))
+          cd "$TARGET_DIR"
+          
+          npm install
+          npm install @capacitor/core @capacitor/android
+          npm install -D @capacitor/cli
+          npm install -g pm2
+          
+          NEXT_TELEMETRY_DISABLED=1 NEXT_DISABLE_SOURCEMAPS=1 NEXT_PRIVATE_SKIP_LINT=1 NEXT_PRIVATE_SKIP_TYPECHECK=1 npx next build
+          
+          PORT=3000 pm2 start "npx next start" --name "next-app"
+          sleep 7
+          
+          mkdir -p android-web-bundle
+          wget --mirror --page-requisites --adjust-extension --no-parent --directory-prefix=android-web-bundle http://localhost:3000/ || true
+          
+          mv android-web-bundle/localhost:3000/* android-web-bundle/ 2>/dev/null || true
+          rm -rf android-web-bundle/localhost:3000
+          
+          if [ ! -f "android-web-bundle/index.html" ]; then
+            cp android-web-bundle/index*.html android-web-bundle/index.html 2>/dev/null || echo "<h1>Beat App</h1>" > android-web-bundle/index.html
+          fi
+          
+          pm2 delete next-app
+          
+          rm -f capacitor.config.ts capacitor.config.json capacitor.config.js
+          echo "module.exports = { appId: 'com.martin.beatapp', appName: 'Beat App', webDir: 'android-web-bundle' };" > capacitor.config.js
+          
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          ANDROID_DIR=$(dirname $(find . -maxdepth 4 -name "gradlew" -not -path "*/.next/*" | head -n 1))
+          cd "$ANDROID_DIR"
+          chmod +x gradlew
+          
+          # Намертво привязываем окружение к установленной Java 21 и Android SDK
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          export JAVA_HOME=$JAVA_HOME_21_X64
+          
+          ./gradlew wrapper --gradle-version 8.13
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beat-app-mobile-apk
+          path: |
+            **/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
         run: |
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" -not -path "*/.next/*" | head -n 1))
           cd "$TARGET_DIR"
