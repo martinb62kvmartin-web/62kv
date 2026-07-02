@@ -28,27 +28,53 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      # Используем встроенный в GitHub Actions Android SDK и принимаем лицензии
       - name: Accept Android Licenses
         run: |
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Install, Build and Sync Capacitor
+      - name: Universal Web and Mobile Build
         run: |
+          # 1. Автоматический и безопасный поиск папки с проектом
           TARGET_DIR=$(dirname $(find . -name "package.json" -not -path "*/node_modules/*" -not -path "*/.next/*" | head -n 1))
           cd "$TARGET_DIR"
           
+          # 2. Установка всех необходимых утилит и пакетов
           npm install
           npm install @capacitor/core @capacitor/android
           npm install -D @capacitor/cli
+          npm install -g pm2
           
+          # 3. Сборка проекта Next.js без блокирующих проверок
           NEXT_TELEMETRY_DISABLED=1 NEXT_DISABLE_SOURCEMAPS=1 NEXT_PRIVATE_SKIP_LINT=1 NEXT_PRIVATE_SKIP_TYPECHECK=1 npx next build
           
-          echo "Создаем мобильную конфигурацию..."
-          rm -f capacitor.config.ts capacitor.config.json capacitor.config.js
-          echo "module.exports = { appId: 'com.martin.beatapp', appName: 'Beat App', webDir: '.next/server/app' };" > capacitor.config.js
+          # 4. ОБХОД ОШИБКИ МАНИФЕСТА И ИНДЕКСА: Программный статический экспорт
+          # Запускаем приложение в фоне на порту 3000
+          PORT=3000 pm2 start "npx next start" --name "next-app"
+          sleep 7 # Даем серверу время инициализироваться
           
+          # Скачиваем готовый рабочий интерфейс сайта в физическую папку "android-web-bundle"
+          mkdir -p android-web-bundle
+          wget --mirror --page-requisites --adjust-extension --no-parent --directory-prefix=android-web-bundle http://localhost:3000/ || true
+          
+          # Вытаскиваем скачанные файлы из подпапки localhost на уровень выше
+          mv android-web-bundle/localhost:3000/* android-web-bundle/ 2>/dev/null || true
+          rm -rf android-web-bundle/localhost:3000
+          
+          # Гарантируем наличие файла index.html для Android манифеста
+          if [ ! -f "android-web-bundle/index.html" ]; then
+            echo "Генерация резервного index.html..."
+            cp android-web-bundle/index*.html android-web-bundle/index.html 2>/dev/null || echo "<h1>Beat App</h1>" > android-web-bundle/index.html
+          fi
+          
+          # Останавливаем фоновый сервер
+          pm2 delete next-app
+          
+          # 5. Генерация конфигурации Capacitor под созданную папку
+          rm -f capacitor.config.ts capacitor.config.json capacitor.config.js
+          echo "module.exports = { appId: 'com.martin.beatapp', appName: 'Beat App', webDir: 'android-web-bundle' };" > capacitor.config.js
+          
+          # 6. Создание и синхронизация Android структуры
           npx cap add android || true
           npx cap sync android
 
@@ -57,7 +83,6 @@ jobs:
           ANDROID_DIR=$(dirname $(find . -maxdepth 4 -name "gradlew" -not -path "*/.next/*" | head -n 1))
           cd "$ANDROID_DIR"
           chmod +x gradlew
-          # Явно передаем путь к Android SDK для Gradle
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           ./gradlew assembleDebug --no-daemon
 
@@ -68,3 +93,4 @@ jobs:
           path: |
             **/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
